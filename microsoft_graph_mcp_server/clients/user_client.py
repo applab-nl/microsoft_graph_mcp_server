@@ -18,6 +18,12 @@ class UserClient(BaseGraphClient):
         """Initialize the user client."""
         super().__init__()
         self._user_email_cache: Optional[str] = None
+        # Cached timezone: None = not yet attempted; str = resolved (either
+        # from Graph or a fallback). Once populated — including via a failure
+        # path — subsequent calls return immediately. This stops corporate
+        # tenants that deny /me/mailboxSettings from spamming a 403 warning
+        # on every get_email_content() call.
+        self._user_timezone_cache: Optional[str] = None
 
     def _get_system_timezone(self) -> str:
         """Get the system's local timezone as a fallback.
@@ -68,7 +74,17 @@ class UserClient(BaseGraphClient):
             return None
 
     async def get_user_timezone(self) -> str:
-        """Get user's timezone identifier from Microsoft Graph mailbox settings."""
+        """Get user's timezone identifier from Microsoft Graph mailbox settings.
+
+        Cached per-process. First call attempts /me/mailboxSettings; on
+        success or failure the resolved value (or fallback) is cached and
+        all subsequent calls return immediately without hitting Graph.
+        Restart the MCP server to retry — useful after a tenant admin
+        grants the missing permission.
+        """
+        if self._user_timezone_cache is not None:
+            return self._user_timezone_cache
+
         try:
             params = {"$select": "mailboxSettings"}
             result = await self.get("/me", params=params)
@@ -79,20 +95,27 @@ class UserClient(BaseGraphClient):
                 logger.info(
                     f"Retrieved timezone from Graph API: {timezone} -> {iana_tz}"
                 )
+                self._user_timezone_cache = iana_tz
                 return iana_tz
             logger.info("No timezone in Graph API mailbox settings")
         except Exception as e:
-            logger.warning(f"Failed to get timezone from Graph API: {e}")
+            # Log ONCE — subsequent calls hit the cache and stay silent.
+            logger.warning(
+                f"Failed to get timezone from Graph API (using fallback for "
+                f"the rest of this session): {e}"
+            )
 
         user_tz = date_handler.convert_to_iana_timezone(settings.user_timezone)
         if user_tz != "UTC":
             logger.info(
                 f"Using USER_TIMEZONE setting: {settings.user_timezone} -> {user_tz}"
             )
+            self._user_timezone_cache = user_tz
             return user_tz
 
         system_tz = self._get_system_timezone()
         logger.info(f"Using system timezone as fallback: {system_tz}")
+        self._user_timezone_cache = system_tz
         return system_tz
 
     async def get_users(
