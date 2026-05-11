@@ -339,9 +339,25 @@ class CalendarClient(BaseGraphClient):
             if filter_conditions:
                 params["$filter"] = " or ".join(filter_conditions)
 
+        # Microsoft Graph's calendarView caps a single response at ~50
+        # events regardless of $top. Follow @odata.nextLink until the range
+        # is exhausted (or we hit the `top` budget) so callers can actually
+        # retrieve all matching events.
         result = await self.get(endpoint, params=params)
-
-        events = result.get("value", [])
+        events = list(result.get("value", []))
+        next_link = result.get("@odata.nextLink")
+        page_count = 1
+        MAX_PAGES = 30  # safety: ~1500 events at Graph's ~50/page cap
+        while next_link and len(events) < top and page_count < MAX_PAGES:
+            relative = next_link
+            if relative.startswith(self.base_url):
+                relative = relative[len(self.base_url) :]
+            page = await self.get(relative)
+            events.extend(page.get("value", []))
+            next_link = page.get("@odata.nextLink")
+            page_count += 1
+        if len(events) > top:
+            events = events[:top]
 
         # Client-side filtering for all-day events: include events that overlap with the date range
         # This ensures all-day events that span multiple days appear in relevant searches
