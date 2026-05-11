@@ -328,6 +328,11 @@ class CalendarHandler(BaseHandler):
                     start_formatted = {
                         "time": "",
                         "timeZone": user_timezone,
+                        # Raw Microsoft Graph UTC ISO 8601 string. Surfaced so
+                        # MCP clients can do their own TZ math without trusting
+                        # `time` (which depends on whatever the user's M365
+                        # mailbox timezone happens to be set to).
+                        "dateTime": start_utc,
                     }
                     if start_utc:
                         start_formatted["time"] = DateHandler.convert_utc_to_user_timezone(
@@ -340,6 +345,7 @@ class CalendarHandler(BaseHandler):
                     end_formatted = {
                         "time": "",
                         "timeZone": user_timezone,
+                        "dateTime": end_utc,
                     }
                     if end_utc:
                         end_formatted["time"] = DateHandler.convert_utc_to_user_timezone(
