@@ -324,6 +324,43 @@ class EmailHandler(BaseHandler):
 
         return self._format_response(f"Email sent successfully: {result}")
 
+    async def handle_create_draft(self, arguments: dict) -> list[types.TextContent]:
+        """Handle create_draft tool — save to the Drafts folder without sending."""
+        to_recipients = arguments["to"]
+        subject = arguments["subject"]
+        body = normalize_email_html(arguments["htmlbody"])
+        cc_recipients = arguments.get("cc")
+
+        if not to_recipients:
+            return self._format_error("create_draft: 'to' must contain at least one recipient.")
+        try:
+            for email in to_recipients + (cc_recipients or []):
+                validate_email_address(email)
+        except ValidationError as e:
+            return self._format_error(f"create_draft: {e}")
+
+        success, result, error = await self._handle_auth_error(
+            lambda: graph_client.create_draft_message(
+                to_recipients=to_recipients,
+                subject=subject,
+                body=body,
+                cc_recipients=cc_recipients,
+                body_content_type="HTML",
+            ),
+            "creating draft",
+        )
+        if not success:
+            return self._format_error(error)
+
+        # _format_response json.dumps the payload itself — pass the dict.
+        return self._format_response(
+            {
+                "success": True,
+                "id": result.get("id", ""),
+                "webLink": result.get("webLink", ""),
+            }
+        )
+
     async def _handle_reply_email(self, arguments: dict) -> list[types.TextContent]:
         """Handle reply email action.
 
