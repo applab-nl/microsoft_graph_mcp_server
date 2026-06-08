@@ -22,6 +22,7 @@ class ToolRegistry:
             ToolRegistry.search_emails(),
             ToolRegistry.get_email_content(),
             ToolRegistry.send_email(),
+            ToolRegistry.create_draft(),
             ToolRegistry.browse_events(),
             ToolRegistry.get_event_detail(),
             ToolRegistry.search_events(),
@@ -408,6 +409,38 @@ class ToolRegistry:
                     },
                 },
                 "required": ["action", "htmlbody"],
+            },
+        )
+
+    @staticmethod
+    def create_draft() -> types.Tool:
+        """Create draft tool definition."""
+        return types.Tool(
+            name="create_draft",
+            description="Create a draft email in the user's Drafts (Concepts) folder WITHOUT sending it. The user reviews and sends it from Outlook. Use this instead of send_email when the email should be saved for review rather than sent immediately. Returns: {success: boolean, id: string, webLink: string}.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of recipient email addresses",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Email subject",
+                    },
+                    "htmlbody": {
+                        "type": "string",
+                        "description": "Email body content in HTML format. Same formatting rules as send_email: <p> per paragraph, no <br> between paragraphs, compact HTML.",
+                    },
+                    "cc": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of CC recipient email addresses (optional)",
+                    },
+                },
+                "required": ["to", "subject", "htmlbody"],
             },
         )
 

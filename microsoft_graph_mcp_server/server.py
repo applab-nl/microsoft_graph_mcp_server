@@ -61,6 +61,7 @@ class MicrosoftGraphMCPServer:
             "search_emails": (self.email_handler, "handle_search_emails"),
             "get_email_content": (self.email_handler, "handle_get_email_content"),
             "send_email": (self.email_handler, "handle_send_email"),
+            "create_draft": (self.email_handler, "handle_create_draft"),
             "browse_events": (self.calendar_handler, "handle_browse_events"),
             "get_event_detail": (self.calendar_handler, "handle_get_event"),
             "search_events": (self.calendar_handler, "handle_search_events"),

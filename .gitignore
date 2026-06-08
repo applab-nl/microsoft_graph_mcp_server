@@ -79,3 +79,6 @@ analyze_*.py
 
 # Windows reserved device names
 nul
+
+# Downloaded email attachments (runtime data)
+attachments/

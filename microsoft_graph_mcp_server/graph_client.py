@@ -300,6 +300,23 @@ class GraphClient:
             importance,
         )
 
+    async def create_draft_message(
+        self,
+        to_recipients: List[str],
+        subject: str,
+        body: str,
+        cc_recipients: Optional[List[str]] = None,
+        body_content_type: str = "HTML",
+    ) -> Dict[str, Any]:
+        """Create a draft in the Drafts folder without sending."""
+        return await self.email_client.create_draft_message(
+            to_recipients,
+            subject,
+            body,
+            cc_recipients,
+            body_content_type,
+        )
+
     async def batch_forward_emails(
         self,
         to_recipients: Optional[List[str]] = None,

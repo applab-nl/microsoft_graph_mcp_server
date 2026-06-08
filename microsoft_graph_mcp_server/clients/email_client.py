@@ -720,6 +720,49 @@ class EmailClient(BaseGraphClient):
         
         return downloaded
 
+    async def create_draft_message(
+        self,
+        to_recipients: List[str],
+        subject: str,
+        body: str,
+        cc_recipients: Optional[List[str]] = None,
+        body_content_type: str = "HTML",
+    ) -> Dict[str, Any]:
+        """Create a draft message in the user's Drafts folder WITHOUT sending.
+
+        The draft shows up in Outlook's Drafts (Concepts) folder where the
+        user can review, edit, and send it themselves.
+
+        Args:
+            to_recipients: List of recipient email addresses
+            subject: Email subject
+            body: Email body content (HTML for body_content_type="HTML")
+            cc_recipients: Optional list of CC recipient email addresses
+            body_content_type: Content type for body ('Text' or 'HTML')
+
+        Returns:
+            {id, subject, webLink} of the created draft message
+        """
+        message_data: Dict[str, Any] = {
+            "subject": subject,
+            "body": {"contentType": body_content_type, "content": body},
+            "toRecipients": [
+                {"emailAddress": {"address": email}} for email in to_recipients
+            ],
+        }
+        if cc_recipients:
+            message_data["ccRecipients"] = [
+                {"emailAddress": {"address": email}} for email in cc_recipients
+            ]
+
+        # POST /me/messages creates the message as a draft in the Drafts folder.
+        result = await self.post("/me/messages", data=message_data)
+        return {
+            "id": result.get("id", ""),
+            "subject": result.get("subject", ""),
+            "webLink": result.get("webLink", ""),
+        }
+
     async def create_template_from_email(
         self,
         email_id: str,
