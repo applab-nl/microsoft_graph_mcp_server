@@ -26,6 +26,21 @@ from .utils import read_bcc_from_csv
 logger = logging.getLogger(__name__)
 
 
+def _is_shutdown_pipe_error(exc: BaseException) -> bool:
+    """True if exc is a BrokenPipeError (or a group containing only those).
+
+    The MCP stdio transport's stdout_writer flushes after every message; when
+    the MCP client tears the subprocess down, the flush races the pipe close
+    and raises BrokenPipeError. anyio wraps task-group failures in
+    (Base)ExceptionGroup, so we recurse.
+    """
+    if isinstance(exc, BrokenPipeError):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return all(_is_shutdown_pipe_error(e) for e in exc.exceptions)
+    return False
+
+
 class MicrosoftGraphMCPServer:
     """MCP Server for Microsoft Graph API integration."""
 
@@ -196,6 +211,9 @@ class MicrosoftGraphMCPServer:
                 sys.stdin = original_stdin
 
         except Exception as e:
+            if _is_shutdown_pipe_error(e):
+                logger.debug("MCP client closed stdio pipe; shutting down cleanly")
+                return
             logger.error(f"Error in server.run(): {e}", exc_info=True)
             raise
 
