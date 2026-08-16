@@ -73,7 +73,9 @@ class EmailHandler(BaseHandler):
         start_date = arguments.get("start_date")
         end_date = arguments.get("end_date")
         time_range = arguments.get("time_range")
-        page_size = 100
+        # Configurable via SEARCH_PAGE_SIZE; Iris injects it so this always
+        # matches its own per-run message cap (see config.search_page_size).
+        page_size = settings.search_page_size
 
         days_provided = "days" in arguments
 
