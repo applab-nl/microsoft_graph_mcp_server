@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     llm_page_size: int = int(
         os.getenv("LLM_PAGE_SIZE", "20")
     )  # Number of items per page for LLM browsing
+    # How many messages search_emails fetches into the cache in one call.
+    # Distinct from the two page sizes above, which paginate BROWSING of an
+    # already-populated cache; this bounds what the search puts there at all.
+    # Iris injects it (see buildMcpEnv in src/lib/graph/client.ts) so it always
+    # equals Iris's own per-run cap — its watermark logic treats
+    # "fewer results than the cap" as proof a search was not truncated, so the
+    # two numbers must not drift. Ceiling is MAX_EMAIL_SEARCH_LIMIT (1000).
+    search_page_size: int = int(os.getenv("SEARCH_PAGE_SIZE", "100"))
 
     # Contact search settings
     contact_search_limit: int = int(
