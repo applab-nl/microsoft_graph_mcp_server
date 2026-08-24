@@ -156,18 +156,54 @@ class BaseGraphClient:
         """Make DELETE request to Graph API."""
         return await self._make_request("DELETE", endpoint)
 
+    @classmethod
+    def _cache_user_timezone(cls, timezone: str, sticky: bool) -> None:
+        """Store the resolved timezone in the class-level cache.
+
+        A ``sticky`` entry never expires: it records that Graph refused to tell
+        us, which is a tenant/app-registration state that only changes when an
+        admin grants the permission (and the server is restarted). Everything
+        else expires after _TIMEZONE_CACHE_TTL so a timezone the user changes
+        in Outlook is still picked up.
+        """
+        BaseGraphClient._user_timezone_cache = timezone
+        BaseGraphClient._user_timezone_cache_time = None if sticky else time.time()
+
+    @staticmethod
+    def _resolve_fallback_timezone() -> str:
+        """Timezone to use when Graph can't tell us: USER_TIMEZONE, then system, then UTC."""
+        user_tz = date_handler.convert_to_iana_timezone(settings.user_timezone)
+        if user_tz != "UTC":
+            return user_tz
+
+        try:
+            local_tz = datetime.now().astimezone().tzinfo
+            if local_tz:
+                tz_str = str(local_tz)
+                if tz_str and tz_str != "UTC":
+                    return date_handler.convert_to_iana_timezone(tz_str)
+        except Exception:
+            pass
+
+        return "UTC"
+
     async def get_user_timezone(self) -> str:
         """Get user's timezone identifier from Microsoft Graph mailbox settings.
 
         First attempts to get timezone from Graph API mailbox settings.
         Falls back to config setting or system timezone if unavailable.
-        Uses a class-level cache to avoid repeated API calls.
+        Uses a class-level cache to avoid repeated API calls. A refusal is
+        cached for the whole session, so a tenant that denies mailboxSettings
+        is probed (and warned about) ONCE per process rather than every time
+        the cache TTL lapses.
         """
-        # Check cache first
+        # Check cache first (cache_time None = sticky entry, never expires)
         current_time = time.time()
-        if (BaseGraphClient._user_timezone_cache is not None and
-            BaseGraphClient._user_timezone_cache_time is not None and
-            current_time - BaseGraphClient._user_timezone_cache_time < BaseGraphClient._TIMEZONE_CACHE_TTL):
+        if BaseGraphClient._user_timezone_cache is not None and (
+            BaseGraphClient._user_timezone_cache_time is None
+            or current_time - BaseGraphClient._user_timezone_cache_time
+            < BaseGraphClient._TIMEZONE_CACHE_TTL
+        ):
             return BaseGraphClient._user_timezone_cache
 
         # Try to get timezone from Graph API mailbox settings
@@ -176,39 +212,31 @@ class BaseGraphClient:
             result = await self.get("/me", params=params)
             mailbox_settings = result.get("mailboxSettings", {})
             timezone = mailbox_settings.get("timeZone")
-            if timezone:
-                iana_tz = date_handler.convert_to_iana_timezone(timezone)
-                logger.info(f"Retrieved timezone from Graph API: {timezone} -> {iana_tz}")
-                # Update cache
-                BaseGraphClient._user_timezone_cache = iana_tz
-                BaseGraphClient._user_timezone_cache_time = current_time
-                return iana_tz
         except Exception as e:
-            logger.warning(f"Failed to get timezone from Graph API: {e}")
+            fallback_tz = self._resolve_fallback_timezone()
+            # Log ONCE - the sticky cache below keeps subsequent calls silent.
+            # Name the timezone actually in use: this drives meeting times, so a
+            # wrong fallback shows the wrong times.
+            logger.warning(
+                f"Failed to get timezone from Graph API - falling back to "
+                f"{fallback_tz} for the rest of this session (all times are "
+                f"shown in {fallback_tz}). A 403 ErrorAccessDenied here means "
+                f"the app registration is missing the MailboxSettings.Read "
+                f"permission; grant it and restart the server, or set "
+                f"USER_TIMEZONE to the correct timezone. Cause: {e}"
+            )
+            self._cache_user_timezone(fallback_tz, sticky=True)
+            return fallback_tz
 
-        # Fall back to config setting
-        user_tz = date_handler.convert_to_iana_timezone(settings.user_timezone)
-        if user_tz != "UTC":
-            logger.info(f"Using USER_TIMEZONE setting: {settings.user_timezone} -> {user_tz}")
-            BaseGraphClient._user_timezone_cache = user_tz
-            BaseGraphClient._user_timezone_cache_time = current_time
-            return user_tz
+        if timezone:
+            iana_tz = date_handler.convert_to_iana_timezone(timezone)
+            logger.info(f"Retrieved timezone from Graph API: {timezone} -> {iana_tz}")
+            self._cache_user_timezone(iana_tz, sticky=False)
+            return iana_tz
 
-        # Final fallback to system timezone
-        try:
-            local_tz = datetime.now().astimezone().tzinfo
-            if local_tz:
-                tz_str = str(local_tz)
-                if tz_str and tz_str != "UTC":
-                    system_tz = date_handler.convert_to_iana_timezone(tz_str)
-                    logger.info(f"Using system timezone as fallback: {system_tz}")
-                    BaseGraphClient._user_timezone_cache = system_tz
-                    BaseGraphClient._user_timezone_cache_time = current_time
-                    return system_tz
-        except Exception:
-            pass
-
-        # Ultimate fallback
-        BaseGraphClient._user_timezone_cache = "UTC"
-        BaseGraphClient._user_timezone_cache_time = current_time
-        return "UTC"
+        # Graph answered but has no timezone set - keep the TTL so a value the
+        # user sets later is picked up.
+        fallback_tz = self._resolve_fallback_timezone()
+        logger.info(f"No timezone in Graph API mailbox settings, using {fallback_tz}")
+        self._cache_user_timezone(fallback_tz, sticky=False)
+        return fallback_tz
