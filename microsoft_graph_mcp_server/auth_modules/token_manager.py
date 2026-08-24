@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -29,7 +30,7 @@ class TokenManager:
         self.load_tokens_from_disk()
 
     def save_tokens_to_disk(self) -> None:
-        """Save authentication tokens to disk."""
+        """Save authentication tokens to disk atomically."""
         try:
             token_data = {
                 "access_token": self.access_token,
@@ -37,8 +38,27 @@ class TokenManager:
                 "token_expiry": self.token_expiry,
                 "authenticated": self.authenticated,
             }
-            with open(TOKEN_FILE, "w") as f:
-                json.dump(token_data, f, indent=2)
+            # Write to a temp file in the same directory and swap it in, so a
+            # crash or a concurrent read can never observe a truncated (or
+            # zero-length) token file. mkstemp creates it mode 0600, which is
+            # what we want for a file holding a long-lived refresh_token.
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(TOKEN_FILE.parent),
+                prefix=f".{TOKEN_FILE.name}.",
+                suffix=".tmp",
+            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(token_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, TOKEN_FILE)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
         except Exception as e:
             logger.warning(f"Failed to save tokens to disk: {e}")
 
@@ -55,25 +75,50 @@ class TokenManager:
             with open(TOKEN_FILE, "r") as f:
                 token_data = json.load(f)
 
-            self.access_token = token_data.get("access_token")
-            self.refresh_token = token_data.get("refresh_token")
-            self.token_expiry = token_data.get("token_expiry", 0)
-            self.authenticated = token_data.get("authenticated", False)
-
-            # Check if access token is expired
-            # IMPORTANT: We keep refresh_token even when access_token expires
-            # This allows automatic token refresh without requiring user to login again
-            if self.authenticated and self.access_token:
-                current_time = time.time()
-                if current_time >= self.token_expiry - 60:
-                    # Access token expired, but keep refresh_token for auto-refresh
-                    logger.info("Access token expired on load, but refresh_token is preserved for auto-refresh")
-                    self.authenticated = False
-                    self.access_token = None
-                    # DO NOT delete tokens from disk - keep refresh_token
+            if not isinstance(token_data, dict):
+                raise ValueError(
+                    f"expected a JSON object, got {type(token_data).__name__}"
+                )
+        except (ValueError, UnicodeDecodeError) as e:
+            # Genuinely corrupt content (empty/truncated file, or valid JSON of
+            # the wrong shape). json.JSONDecodeError is a ValueError. The file
+            # is unusable, so move it aside - it stays diagnosable, and the next
+            # save writes a clean one.
+            logger.warning(f"Token file is corrupt, moving it aside: {e}")
+            self.quarantine_corrupt_token_file()
+            return
         except Exception as e:
+            # Transient failure (OS/IO/permission error, interrupted read).
+            # NEVER delete the file here: it holds the long-lived refresh_token,
+            # and destroying it turns one bad read into a dead session that only
+            # an interactive re-login can fix.
             logger.warning(f"Failed to load tokens from disk: {e}")
-            # Only delete on parse errors, not on expired tokens
+            return
+
+        self.access_token = token_data.get("access_token")
+        self.refresh_token = token_data.get("refresh_token")
+        self.token_expiry = token_data.get("token_expiry", 0)
+        self.authenticated = token_data.get("authenticated", False)
+
+        # Check if access token is expired
+        # IMPORTANT: We keep refresh_token even when access_token expires
+        # This allows automatic token refresh without requiring user to login again
+        if self.authenticated and self.access_token:
+            current_time = time.time()
+            if current_time >= self.token_expiry - 60:
+                # Access token expired, but keep refresh_token for auto-refresh
+                logger.info("Access token expired on load, but refresh_token is preserved for auto-refresh")
+                self.authenticated = False
+                self.access_token = None
+                # DO NOT delete tokens from disk - keep refresh_token
+
+    def quarantine_corrupt_token_file(self) -> None:
+        """Move an unreadable token file aside so the failure stays diagnosable."""
+        corrupt_file = TOKEN_FILE.with_name(TOKEN_FILE.name + ".corrupt")
+        try:
+            os.replace(TOKEN_FILE, corrupt_file)
+        except Exception as e:
+            logger.warning(f"Failed to move corrupt token file aside: {e}")
             self.delete_tokens_from_disk()
 
     def delete_tokens_from_disk(self) -> None:
