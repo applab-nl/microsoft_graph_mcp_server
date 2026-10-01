@@ -17,6 +17,7 @@ def map_chat(c: Dict[str, Any]) -> Dict[str, Any]:
         "chat_type": c.get("chatType"),
         "topic": c.get("topic"),
         "last_updated": c.get("lastUpdatedDateTime"),
+        "last_message_at": (c.get("lastMessagePreview") or {}).get("createdDateTime"),
         "join_url": (c.get("onlineMeetingInfo") or {}).get("joinWebUrl"),
         "members": [
             {"user_id": m.get("userId"), "display_name": m.get("displayName"), "email": m.get("email")}

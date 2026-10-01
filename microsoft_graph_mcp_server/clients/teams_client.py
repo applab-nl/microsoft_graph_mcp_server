@@ -29,8 +29,14 @@ class TeamsClient(BaseGraphClient):
         return await self.get("/me", params={"$select": "id,userPrincipalName,displayName"})
 
     async def list_chats(self) -> List[Dict[str, Any]]:
-        """All chats (1:1, group, meeting) with members expanded."""
-        result = await self.get("/me/chats", params={"$expand": "members", "$top": "50"})
+        """All chats (1:1, group, meeting) with members and the last-message preview expanded.
+
+        lastUpdatedDateTime only moves on renames/member changes; the preview's
+        createdDateTime is what tells a caller a chat has new messages.
+        """
+        result = await self.get(
+            "/me/chats", params={"$expand": "members,lastMessagePreview", "$top": "50"}
+        )
         chats = list(result.get("value", []))
         next_link, pages = result.get("@odata.nextLink"), 1
         while next_link and pages < self.MAX_PAGES:

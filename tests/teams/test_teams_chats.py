@@ -79,16 +79,24 @@ def test_map_message_extracts_mentions_and_quoted_reply_author():
     }
 
 
+async def test_list_chats_expands_last_message_preview():
+    client = FakeTeamsClient([[]])
+    await client.list_chats()
+    assert client.calls[0][1]["$expand"] == "members,lastMessagePreview"
+
+
 def test_map_chat_reads_join_url_and_members():
     raw = {
         "id": "19:meeting_x@thread.v2", "chatType": "meeting", "topic": "Weekly",
         "lastUpdatedDateTime": "2026-10-01T09:00:00Z",
         "onlineMeetingInfo": {"joinWebUrl": "https://teams.microsoft.com/l/meetup-join/abc"},
         "members": [{"userId": "u1", "displayName": "Ann", "email": "ann@x.test"}],
+        "lastMessagePreview": {"createdDateTime": "2026-10-01T11:30:00Z"},
     }
     assert map_chat(raw) == {
         "id": "19:meeting_x@thread.v2", "chat_type": "meeting", "topic": "Weekly",
         "last_updated": "2026-10-01T09:00:00Z",
+        "last_message_at": "2026-10-01T11:30:00Z",
         "join_url": "https://teams.microsoft.com/l/meetup-join/abc",
         "members": [{"user_id": "u1", "display_name": "Ann", "email": "ann@x.test"}],
     }
