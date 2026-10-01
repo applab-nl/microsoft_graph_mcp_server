@@ -17,7 +17,7 @@ from .handlers import (
     EmailHandler,
     CalendarHandler,
     # FileHandler,  # Disabled: OneDrive not needed
-    # TeamsHandler,  # Disabled: Teams not needed
+    TeamsHandler,
 )
 from .tools import ToolRegistry
 from .config import settings
@@ -57,7 +57,7 @@ class MicrosoftGraphMCPServer:
         self.email_handler = EmailHandler()
         self.calendar_handler = CalendarHandler()
         # self.file_handler = FileHandler()  # Disabled: OneDrive not needed
-        # self.teams_handler = TeamsHandler()  # Disabled: Teams not needed
+        self.teams_handler = TeamsHandler()
 
         self._build_dispatch_table()
         self._register_handlers()
@@ -86,6 +86,7 @@ class MicrosoftGraphMCPServer:
             ),
             "manage_event_as_attendee": (self.calendar_handler, "handle_respond_to_event"),
             "manage_event_as_organizer": (self.calendar_handler, "handle_manage_my_event"),
+            "teams_chats": (self.teams_handler, "handle_teams_chats"),
             # "list_files": (self.file_handler, "handle_list_files"),  # Disabled: OneDrive not needed
             # "get_teams": (self.teams_handler, "handle_get_teams"),  # Disabled: Teams not needed
             # "get_team_channels": (self.teams_handler, "handle_get_team_channels"),  # Disabled: Teams not needed

@@ -29,6 +29,7 @@ class ToolRegistry:
             ToolRegistry.check_attendee_availability(),
             ToolRegistry.manage_event_as_organizer(),
             ToolRegistry.manage_event_as_attendee(),
+            ToolRegistry.teams_chats(),
             # ToolRegistry.list_files(),  # Disabled: OneDrive not needed
             # ToolRegistry.get_teams(),  # Disabled: Teams not needed
             # ToolRegistry.get_team_channels(),  # Disabled: Teams not needed
@@ -871,6 +872,28 @@ class ToolRegistry:
                     }
                 },
                 "required": ["team_id"],
+            },
+        )
+
+    @staticmethod
+    def teams_chats() -> types.Tool:
+        """Teams chats (1:1, group, meeting) read tool."""
+        return types.Tool(
+            name="teams_chats",
+            description=(
+                "Read Microsoft Teams chats. action=me returns the signed-in user's Graph id. "
+                "action=list_chats returns all chats with type, topic, last update, meeting join URL and members. "
+                "action=list_messages returns user messages in one chat newer than `since` (ISO 8601), oldest first, "
+                "with plain-text body, mentioned user ids, quoted-reply author id and web URL."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["me", "list_chats", "list_messages"]},
+                    "chat_id": {"type": "string", "description": "Chat id from list_chats (list_messages only)"},
+                    "since": {"type": "string", "description": "ISO 8601 UTC lower bound, exclusive (list_messages only)"},
+                },
+                "required": ["action"],
             },
         )
 

@@ -30,9 +30,7 @@ class TestToolDispatchTable:
             "check_attendee_availability",
             "manage_event_as_attendee",
             "manage_event_as_organizer",
-            "list_files",
-            "get_teams",
-            "get_team_channels",
+            "teams_chats",
         ]
 
         for tool_name in expected_tools:
